@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-
-	"github.com/nats-io/nats.go"
 )
 
 type User struct {
@@ -154,34 +152,24 @@ func resultSummary(results []EmailResult) {
 }
 
 func main() {
-	nc, err := nats.Connect("nats://localhost:4222")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer nc.Close()
-
-	nc.Publish("greet", []byte("hello"))
-	sub, _ := nc.SubscribeSync("greet")
-	msg, _ := sub.NextMsg(10 * time.Millisecond)
-	fmt.Printf("msg data: %q, on subject %q\n", string(msg.Data), msg.Subject)
 	// テスト用ユーザーデータ
-	//　選択できるユーザー数と送信時間は変えれてもいい？（優先度: 低）
-	// users := makeUsers(10)
+	// 選択できるユーザー数と送信時間は変えれてもいい？（優先度: 低）
+	users := makeUsers(10)
 
-	// startSync := time.Now()
-	// resultsSync := sendEmailsSync(users)
-	// durationSync := time.Since(startSync)
-	// rpsSync := len(users) / int(durationSync.Seconds())
+	startSync := time.Now()
+	resultsSync := sendEmailsSync(users)
+	durationSync := time.Since(startSync)
+	rpsSync := len(users) / int(durationSync.Seconds())
 
-	// fmt.Printf("\n同期処理完了: %v, rps: %v\n", durationSync, rpsSync)
-	// resultSummary(resultsSync)
+	fmt.Printf("\n同期処理完了: %v, rps: %v\n", durationSync, rpsSync)
+	resultSummary(resultsSync)
 
-	// const numWorkers = 5
-	// startAsyncGoroutine := time.Now()
-	// resultsAsyncGoroutine := sendEmailsGoroutine(users, numWorkers)
-	// durationAsyncGoroutine := time.Since(startAsyncGoroutine)
-	// //rpsAsyncGoroutine := len(users) / int(durationAsyncGoroutine.Seconds())
+	const numWorkers = 5
+	startAsyncGoroutine := time.Now()
+	resultsAsyncGoroutine := sendEmailsGoroutine(users, numWorkers)
+	durationAsyncGoroutine := time.Since(startAsyncGoroutine)
+	//rpsAsyncGoroutine := len(users) / int(durationAsyncGoroutine.Seconds())
 
-	// fmt.Printf("\n非同期処理(Goroutine)完了: %v\n", durationAsyncGoroutine)
-	// resultSummary(resultsAsyncGoroutine)
+	fmt.Printf("\n非同期処理(Goroutine)完了: %v\n", durationAsyncGoroutine)
+	resultSummary(resultsAsyncGoroutine)
 }

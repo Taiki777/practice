@@ -63,14 +63,14 @@ func main() {
 	}
 
 	// consumerを取得？ 上の作成との違いはまだ不明
-	consumer, err := stream.Consumer(ctx, "worker")
-	if err != nil {
-		log.Fatal(err)
-	}
+	// consumer, err := stream.Consumer(ctx, "worker")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	log.Println("waiting for messages...")
 
-	log.Printf("worker started sleep=%dms", *sleepMs)
+	//log.Printf("worker started sleep=%dms", *sleepMs)
 
 	// メッセージを取得するループ
 	go func() {
@@ -87,16 +87,27 @@ func main() {
 				continue
 			}
 
-			var task Task
-			if err := json.Unmarshal(msg.Data(), &task); err != nil {
+			// var task Task
+			// if err := json.Unmarshal(msg.Data(), &task); err != nil {
+			// 	log.Printf("Unmarshal error: %v", err)
+			// 	msg.Term()
+			// 	continue
+			// }
+
+			// log.Printf("Processing: to=%s, template=%s", task.To, task.Template)
+
+			var user User
+			if err := json.Unmarshal(msg.Data(), &user); err != nil {
 				log.Printf("Unmarshal error: %v", err)
 				msg.Term()
 				continue
 			}
 
-			log.Printf("Processing: to=%s, template=%s", task.To, task.Template)
+			//log.Printf("Processing: to=%s, template=%s", user.ID, user.Email)
 
 			// ここで実際の処理を行う（メール送信など）
+			log.Printf("NATS: Sending to %s (%s)...", user.ID, user.Email)
+			sendEmails()
 
 			// 処理完了をAck
 			if err := msg.Ack(); err != nil {
@@ -110,24 +121,24 @@ func main() {
 	log.Printf("Shutting down...")
 
 	// 2) pullで取り出して処理（バッチ10件）
-	for {
-		msgs, err := c.Fetch(10, jetstream.FetchMaxWait(2*time.Second))
-		if err != nil {
-			continue
-		}
+	// for {
+	// 	msgs, err := c.Fetch(10, jetstream.FetchMaxWait(2*time.Second))
+	// 	if err != nil {
+	// 		continue
+	// 	}
 
-		for msg := range msgs.Messages() {
-			var u User
-			if err := json.Unmarshal(msg.Data(), &u); err != nil {
-				_ = msg.Ack() // 壊れたpayloadは捨てる（学習用）
-				continue
-			}
+	// 	for msg := range msgs.Messages() {
+	// 		var u User
+	// 		if err := json.Unmarshal(msg.Data(), &u); err != nil {
+	// 			_ = msg.Ack() // 壊れたpayloadは捨てる（学習用）
+	// 			continue
+	// 		}
 
-			time.Sleep(time.Duration(*sleepMs) * time.Millisecond)
-			log.Printf("sent to %s (%s)", u.ID, u.Email)
+	// 		time.Sleep(time.Duration(*sleepMs) * time.Millisecond)
+	// 		log.Printf("sent to %s (%s)", u.ID, u.Email)
 
-			// ★最低限のACK 1行：これがあるから「落としても未完了ジョブが残る」が成立する
-			_ = msg.Ack()
-		}
-	}
+	// 		// ★最低限のACK 1行：これがあるから「落としても未完了ジョブが残る」が成立する
+	// 		_ = msg.Ack()
+	// 	}
+	// }
 }

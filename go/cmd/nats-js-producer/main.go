@@ -5,10 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
 	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -74,8 +71,8 @@ func makeUsers(userNum int) []User {
 
 func main() {
 	// 常駐用　ctrl + cなどで止める
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
+	// ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+	// defer stop()
 	// 上のやつはよく分からん
 
 	nc, err := nats.Connect(nats.DefaultURL)
@@ -90,8 +87,8 @@ func main() {
 	}
 
 	cfg := jetstream.StreamConfig{
-		Name:      "Email",
-		Subjects:  []string{"mail.job"},
+		Name:      "Tasks",
+		Subjects:  []string{"tasks.email"},
 		Retention: jetstream.WorkQueuePolicy,
 		Storage:   jetstream.FileStorage,
 	}
@@ -100,28 +97,39 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_, err = js.CreateStream(ctx, cfg)
+	_, err = js.CreateOrUpdateStream(ctx, cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("created the stream")
 
-	//users := makeUsers(10)
+	users := makeUsers(20)
+	for _, user := range users {
+		data, err := json.Marshal(user)
+		if err != nil {
+			log.Fatal(err)
+		}
+		ack, err := js.Publish(ctx, "tasks.email", data)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("published stream=%s, seq=%d", ack.Stream, ack.Sequence)
+	}
 
-	task := Task{
-		To:       "user1@example.com",
-		Template: "welcome",
-	}
-	data, err := json.Marshal(task)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// task := Task{
+	// 	To:       "user1@example.com",
+	// 	Template: "welcome",
+	// }
+	// data, err := json.Marshal(task)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	ack, err := js.Publish(ctx, "tasks.email", data)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("published stream=%s, seq=%d", ack.Stream, ack.Sequence)
+	// ack, err := js.Publish(ctx, "tasks.email", data)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// log.Printf("published stream=%s, seq=%d", ack.Stream, ack.Sequence)
 
 	// for _, user := range users {
 	// 	ack, err := js.Publish(ctx, "mail.job", nil)
