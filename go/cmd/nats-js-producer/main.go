@@ -12,47 +12,19 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-type Task struct {
-	To       string `json:"to"`
-	Template string `json:"template"`
-}
-
 type User struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 }
 
-type EmailJob struct {
-	JobID string `json:"job_id"` // 一意（例: runID + ":" + userID）
-	RunID string `json:"run_id"` // 1回の実験単位（結果の紐付け用）
-	User  User   `json:"user"`   // 今回はDBなしで完結させたいので丸ごと入れる
+type EmailTask struct {
+	User          User   `json:"user"`           // 今回はDBなしで完結させたいので丸ごと入れる
+	ResultSubject string `json:"result_subject"` // 完了通知の返却先（tasks.results.<runID>）
 }
 
 type EmailResult struct {
-	RunID        string `json:"run_id"`
-	JobID        string `json:"job_id"`
-	UserID       string `json:"user_id"`
-	Success      bool   `json:"success"`
-	ErrorMessage string `json:"error_message,omitempty"`
+	UserID string `json:"user_id"`
 }
-
-//func ensureStream(js nats.JetStreamContext) error {
-// func ensureStream() error {
-// 	js, _ := jetstream.New(nc)
-// 	cfg := jetstream.StreamConfig{
-// 		Name:      "Email",
-// 		Subjects:  []string{"mail.job"},
-// 		Retention: jetstream.WorkQueuePolicy,
-// 		Storage:   jetstream.FileStorage,
-// 	}
-
-// 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-// 	defer cancel()
-
-// 	stream, _ := js.CreateStream(ctx, cfg)
-// 	fmt.Println("created the stream")
-// 	return err
-// }
 
 func makeUsers(userNum int) []User {
 	users := make([]User, 0, userNum)
@@ -70,10 +42,10 @@ func makeUsers(userNum int) []User {
 }
 
 func main() {
+	users := makeUsers(20)
 	// 常駐用　ctrl + cなどで止める
 	// ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	// defer stop()
-	// 上のやつはよく分からん
 
 	nc, err := nats.Connect(nats.DefaultURL)
 	if err != nil {
@@ -103,9 +75,27 @@ func main() {
 	}
 	fmt.Println("created the stream")
 
-	users := makeUsers(20)
+	runID := fmt.Sprintf("%d", time.Now().UnixNano())
+	resultSubject := "tasks.results." + runID
+
+	// resultsSubjectをsubscribe
+	sub, err := nc.SubscribeSync(resultSubject)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// SubscribeSync の後に Flush しておく
+	// 購読がサーバに反映される前に結果が飛ぶと取り逃がすことがあるので、基本入れます。
+	// if err := nc.FlushTimeout(2 * time.Second); err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	startTime := time.Now()
 	for _, user := range users {
-		data, err := json.Marshal(user)
+		emailTask := EmailTask{
+			User:          user,
+			ResultSubject: resultSubject,
+		}
+		data, err := json.Marshal(emailTask)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -116,25 +106,17 @@ func main() {
 		log.Printf("published stream=%s, seq=%d", ack.Stream, ack.Sequence)
 	}
 
-	// task := Task{
-	// 	To:       "user1@example.com",
-	// 	Template: "welcome",
-	// }
-	// data, err := json.Marshal(task)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// ack, err := js.Publish(ctx, "tasks.email", data)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// log.Printf("published stream=%s, seq=%d", ack.Stream, ack.Sequence)
-
-	// for _, user := range users {
-	// 	ack, err := js.Publish(ctx, "mail.job", nil)
-	// 	if err != nil {
-	// 		log.Fatal(err)
-	// 	}
-	// }
+	recieved := 0
+	for recieved < len(users) {
+		msg, err := sub.NextMsg(60 * time.Second)
+		if err != nil {
+			log.Fatal(err)
+		}
+		//fmt.Printf("msg data: %q on subject %q\n", string(msg.Data), msg.Subject)
+		log.Printf("msg data: %q on subject %q\n", string(msg.Data), msg.Subject)
+		recieved++
+	}
+	totalTime := time.Since(startTime)
+	rps := float64(len(users)) / totalTime.Seconds()
+	fmt.Printf("total = %v rps = %v", totalTime, rps)
 }
